@@ -37,11 +37,11 @@ contract NFTime is ERC721, ERC721URIStorage, Ownable {
     event NFTListedForSale(address indexed seller, uint256 indexed tokenId, uint256 price);
     event NFTSold(address indexed seller, address indexed buyer, uint256 indexed tokenId, uint256 salePrice);
 
-    constructor(address NFTimeAddress, string memory brandName, string memory collectionName, string memory symbol) 
+    constructor(address brandAddress, string memory brandName, string memory collectionName, string memory symbol) 
         ERC721(collectionName, symbol) {
-        transferOwnership(msg.sender);
-        commissionRecipient = NFTimeAddress; // Set recipient to be NFTime address
-        addCertifier(msg.sender, brandName); // Brand address is set as certifier as well so that it can mint too
+        transferOwnership(brandAddress);
+        commissionRecipient = msg.sender; // Set recipient to be NFTime address
+        addCertifier(brandAddress, brandName); // Brand address is set as certifier as well so that it can mint too
     }
 
 
