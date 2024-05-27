@@ -6,6 +6,13 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 
+// TODO:
+// - Figura admin per bloccare tutto e farsi pagare da brand;
+// - Pagamento per minting tramite oracolo + penso a logica di upgrade se necessaria;
+// - Sostituire buy con transfer;
+// - Valutare inserimento burn tra le features (i.e. per certificatori "corrotti") -> memorizzazione dell'associazione <certificatori, NFT mintati>;
+    // - Salvataggio tokenID degli NFT;
+
 contract NFTime is ERC721, ERC721URIStorage, Ownable {
     using Counters for Counters.Counter;
     Counters.Counter private _tokenIds;
@@ -60,6 +67,11 @@ contract NFTime is ERC721, ERC721URIStorage, Ownable {
         emit CertifierRemoved(certifierAddress);
     }
 
+
+    // -----------------------------------
+    // Methods - only commission recipient
+    // -----------------------------------
+
     function setCommissionRecipient(address recipient) external {
         require(msg.sender == commissionRecipient, "Only the commission recipient can transfer this role");
         address oldCommissionRecipient = commissionRecipient;
@@ -72,13 +84,20 @@ contract NFTime is ERC721, ERC721URIStorage, Ownable {
     // Methods - only certifiers
     // -------------------------
 
-    function mintNFT(address recipient, string memory tokenURI) external returns (uint256) {
+    function getCommissionValue() returns (uint256) {
+        return 1510802235987309200000000000000;
+    }
+
+    function mintNFT(address recipient, string memory tokenURI) external payable returns (uint256) {
         require(certifiers[msg.sender].isActive, "Only active 'certifiers' can perform this operation");
+        uint256 commissionValue = getCommissionValue();
+        require(msg.value >= commissionValue, "Not enough commission sent");
         _tokenIds.increment();
         uint256 newItemId = _tokenIds.current();
         _mint(recipient, newItemId);
         _setTokenURI(newItemId, tokenURI);
         emit NFTMinted(recipient, newItemId, tokenURI);
+        payable(commissionRecipient).transfer(commissionValue);
         return newItemId;
     }
 
