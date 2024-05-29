@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Pausable.sol";
@@ -11,26 +10,31 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 
 
 // TODO:
-// - (?) Figura admin per bloccare tutto e farsi pagare da brand;
+// - OK Figura admin per bloccare tutto e farsi pagare da brand (PAUSER);
 // - Pagamento per minting tramite oracolo + penso a logica di upgrade se necessaria;
 // - OK Sostituire buy con transfer;
 // - Valutare inserimento burn tra le features (i.e. per certificatori "corrotti") -> memorizzazione dell'associazione <certificatori, NFT mintati>;
-    // - Salvataggio tokenID degli NFT;
+    // - Salvataggio tokenID degli NFT (isn't this stored in ERC721?);
 // - Metodo che ritorna la lista dei certificatori;
-// - (?) Implementare uso corretto dei ruoli;
+// - OK Implementare uso corretto dei ruoli;
+// - Valutare quali altri eventi aggiungere per tenere traccia delle transazioni più importanti;
 
 
-contract MyToken is ERC721, ERC721Pausable, ERC721URIStorage, AccessControl {
+contract NFTime_Rolex is ERC721, ERC721Pausable, ERC721URIStorage, AccessControl {
     using Counters for Counters.Counter;
     Counters.Counter private _tokenIds;
 
     // List of certifiers
-    mapping(address => string) private certifiers;
+    mapping(address => string) private certifiers; // Visto l'utilizzo dei ruoli, ha davvero senso memorizzare
+    // i dati sui certificatori all'iterno della Blokchain? Perché non memorizzare questi dati nella DApp?
+    // Pensare a vantaggi e svantaggi!
+
+
     // Address to receive the commission
     address private commissionRecipient;
 
     // Roles
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant BURNER_ROLE = keccak256("BURNER_ROLE");
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
@@ -42,9 +46,9 @@ contract MyToken is ERC721, ERC721Pausable, ERC721URIStorage, AccessControl {
     constructor(address initialOwner)
         ERC721("Rolex_NFTime", "WTC")
     {
-        _grantRole(ADMIN_ROLE, initialOwner);
+        _grantRole(BURNER_ROLE, initialOwner);
         _grantRole(PAUSER_ROLE, msg.sender);
-        _setRoleAdmin(MINTER_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(MINTER_ROLE, BURNER_ROLE);
         _setRoleAdmin(PAUSER_ROLE, PAUSER_ROLE);
     }
 
@@ -55,7 +59,7 @@ contract MyToken is ERC721, ERC721Pausable, ERC721URIStorage, AccessControl {
 
     function addCertifier(address certifierAddress, string memory certifierName) 
         external 
-        onlyRole(ADMIN_ROLE) 
+        onlyRole(BURNER_ROLE) 
     {
         grantRole(MINTER_ROLE, certifierAddress);
         emit CertifierAdded(certifierAddress, certifierName);
@@ -63,7 +67,7 @@ contract MyToken is ERC721, ERC721Pausable, ERC721URIStorage, AccessControl {
 
     function removeCertifier(address certifierAddress) 
         external 
-        onlyRole(ADMIN_ROLE)
+        onlyRole(BURNER_ROLE)
     {
         revokeRole(MINTER_ROLE, certifierAddress);
         emit CertifierRemoved(certifierAddress, certifiers[certifierAddress]);
@@ -94,7 +98,7 @@ contract MyToken is ERC721, ERC721Pausable, ERC721URIStorage, AccessControl {
     // Methods - only certifiers
     // -------------------------
 
-    function getCommissionValue() pure internal returns (uint256) {
+    function getCommissionValue() pure private returns (uint256) {
         return 10;
     }
 
