@@ -7,18 +7,17 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Pausable.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 
-
-
 // TODO:
 // - OK Figura admin per bloccare tutto e farsi pagare da brand (PAUSER);
 // - Pagamento per minting tramite oracolo + penso a logica di upgrade se necessaria;
 // - OK Sostituire buy con transfer;
 // - Valutare inserimento burn tra le features (i.e. per certificatori "corrotti") -> memorizzazione dell'associazione <certificatori, NFT mintati>;
     // - Salvataggio tokenID degli NFT (isn't this stored in ERC721?);
+    // - Burning di tutti gli NFT di un dato certificatore dopo una certa data;
+    // - Metodo che restituisca lista NFT con certificatore e data di certificazione;
 // - Metodo che ritorna la lista dei certificatori;
 // - OK Implementare uso corretto dei ruoli;
 // - Valutare quali altri eventi aggiungere per tenere traccia delle transazioni più importanti;
-
 
 contract NFTime_Rolex is ERC721, ERC721Pausable, ERC721URIStorage, AccessControl {
     using Counters for Counters.Counter;
