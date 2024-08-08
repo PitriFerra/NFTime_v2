@@ -56,16 +56,21 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
     bytes32 public constant CERTIFIER_ROLE_MINTER = keccak256("CERTIFIER_ROLE_MINTER");
     bytes32 public constant NFTIME_ROLE_PAUSER = keccak256("NFTIME_ROLE_PAUSER");
     
-    // Define a structure for certifiers
+    // Define a structure for certifiers and tokens
     struct Certifier {
         address certifierAddress;
         string certifierName;
+    }
+    
+    struct sToken {
+        uint256 token_ID;
+        string token_URI;
     }
 
     // List/mappinns
     Certifier[] private certifiers;
     mapping(address => uint256[]) private certifierTokens; // Who minted the NFT
-    mapping(address => uint256[]) private customerTokens;  // Who owns the NFT
+    mapping(address => sToken[]) private customerTokens;  // Who owns the NFT
     mapping(uint256 => address) private tokenCertifiers;
     mapping(uint256 => int256) private tokenPrices;
     
@@ -155,7 +160,7 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         tokenCertifiers[newItemId] = msg.sender;
         tokenPrices[newItemId] = watchPrice;
         certifierTokens[msg.sender].push(newItemId);
-        customerTokens[to].push(newItemId);
+        customerTokens[to].push(sToken(newItemId, token_URI));
         
         return newItemId;
     }
@@ -166,7 +171,7 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         require(msg.sender == from, "Only the owner can initiate the transfer");
 
         // Remove the token from the old owner's customer tokens list
-        removeTokenFromCustomer(from, tokenId);
+        sToken memory tmpToken = removeTokenFromCustomer(from, tokenId);
 
         // Perform the transfer
         _transfer(from, to, tokenId);
@@ -179,7 +184,7 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         payable(transferCommissionRecipient).transfer(commissionValue); // Certification payment off-chain
 
         // Update customer tokens for the new owner
-        customerTokens[to].push(tokenId);
+        customerTokens[to].push(tmpToken);
 
         // Emit a Transfer event (ERC721 already emits Transfer event)
         emit Transfer(from, to, tokenId);
@@ -187,6 +192,10 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
 
     function getCertifierTokens(address certifierAddress) external view returns (uint256[] memory) {
         return certifierTokens[certifierAddress];
+    }
+
+    function getCustomerTokens(address customerAddress) external view returns (sToken[] memory) {
+        return customerTokens[customerAddress];
     }
 
     function burnToken(uint256 tokenId) external onlyRole(BRAND_ROLE_BURNER) {
@@ -232,7 +241,7 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
     
     // Funzione di utilità per rimuovere un token dalla lista di un certificatore
     function _removeTokenFromCertifier(address certifier, uint256 tokenId) internal {
-        uint256[] storage tokens = certifierTokens[certifier];
+        uint256[] storage  tokens = certifierTokens[certifier];
         for (uint256 i = 0; i < tokens.length; i++) {
             if (tokens[i] == tokenId) {
                 tokens[i] = tokens[tokens.length - 1];
@@ -242,16 +251,18 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         }
     }
 
-    function removeTokenFromCustomer(address customer, uint256 tokenId) internal
-    {
-        uint256[] storage tokens = customerTokens[customer];
+    function removeTokenFromCustomer(address customer, uint256 tokenId) internal returns(sToken memory) {
+        sToken memory tmpReturn;
+        sToken[] storage  tokens = customerTokens[customer];
         for (uint256 i = 0; i < tokens.length; i++) {
-            if (tokens[i] == tokenId) {
+            if (tokens[i].token_ID == tokenId) {
+                tmpReturn = tokens[i]; 
                 tokens[i] = tokens[tokens.length - 1];
                 tokens.pop();
                 break;
             }
         }
+        return tmpReturn;
     }
     
     // ----------
@@ -294,7 +305,7 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         // renounceRole(NFTIME_ROLE_PAUSER, msg.sender); // x PIETRO --> SICURO CHE QUA NON SIA oldRecipient invece di msg.sender?    
     }
 
-    function getCommissionValue(uint256 tokenId) public view onlyRole(BRAND_ROLE_BURNER) returns(int)
+    function getCommissionValue(uint256 tokenId) public view returns(int)
     {
         // Get MATIC current fiat price from chainlink oracle
         int currentFiatPrice = Oracle(oracleAddress).latestAnswer();
