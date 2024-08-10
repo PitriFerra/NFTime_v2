@@ -61,16 +61,11 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         address certifierAddress;
         string certifierName;
     }
-    
-    struct sToken {
-        uint256 token_ID;
-        string token_URI;
-    }
 
     // List/mappinns
     Certifier[] private certifiers;
     mapping(address => uint256[]) private certifierTokens; // Who minted the NFT
-    mapping(address => sToken[]) private customerTokens;  // Who owns the NFT
+    mapping(address => uint256[]) private customerTokens;  // Who owns the NFT
     mapping(uint256 => address) private tokenCertifiers;
     mapping(uint256 => int256) private tokenPrices;
     
@@ -160,7 +155,7 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         tokenCertifiers[newItemId] = msg.sender;
         tokenPrices[newItemId] = watchPrice;
         certifierTokens[msg.sender].push(newItemId);
-        customerTokens[to].push(sToken(newItemId, token_URI));
+        customerTokens[to].push(newItemId);
         
         return newItemId;
     }
@@ -171,7 +166,7 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         require(msg.sender == from, "Only the owner can initiate the transfer");
 
         // Remove the token from the old owner's customer tokens list
-        sToken memory tmpToken = removeTokenFromCustomer(from, tokenId);
+        _removeTokenFromCustomer(from, tokenId);
 
         // Perform the transfer
         _transfer(from, to, tokenId);
@@ -184,7 +179,7 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         payable(transferCommissionRecipient).transfer(commissionValue); // Certification payment off-chain
 
         // Update customer tokens for the new owner
-        customerTokens[to].push(tmpToken);
+        customerTokens[to].push(tokenId);
 
         // Emit a Transfer event (ERC721 already emits Transfer event)
         emit Transfer(from, to, tokenId);
@@ -194,24 +189,32 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         return certifierTokens[certifierAddress];
     }
 
-    function getCustomerTokens(address customerAddress) external view returns (sToken[] memory) {
+    function getCustomerTokens(address customerAddress) external view returns (uint256[] memory) {
         return customerTokens[customerAddress];
     }
 
-    function burnToken(uint256 tokenId) external onlyRole(BRAND_ROLE_BURNER) {
+    function burnToken(uint256 tokenId) private {
         // Check
         require(_tokenExists(tokenId), "Token does not exist");
         address certifier = tokenCertifiers[tokenId];
         require(certifier != address(0), "Token has no certifier");
 
+        // Get the owner        
+        address owner = this.ownerOf(tokenId);
+
         // Burn
         _burn(tokenId);
         emit TokenBurned(certifier, tokenId);
 
-        // Remove token data
+        // Remove token data from mappings
         _removeTokenFromCertifier(certifier, tokenId);
+        _removeTokenFromCustomer(owner, tokenId);
         delete tokenCertifiers[tokenId];
         delete tokenPrices[tokenId];
+    }
+
+    function burnSingleToken(uint256 tokenId) external onlyRole(BRAND_ROLE_BURNER) {
+        burnToken(tokenId);        
     }
 
     function burnTokensByCertifier(address certifierAddress) external onlyRole(BRAND_ROLE_BURNER)
@@ -219,13 +222,7 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         uint256[] memory tokens = certifierTokens[certifierAddress];
         for (uint256 i = 0; i < tokens.length; i++) {
             uint256 tokenId = tokens[i];
-            if (_tokenExists(tokenId)) {
-                _burn(tokenId);
-                emit TokenBurned(certifierAddress, tokenId);
-                
-                delete tokenCertifiers[tokenId];
-                delete tokenPrices[tokenId];
-            }
+            burnToken(tokenId);
         }
         delete certifierTokens[certifierAddress];
     }
@@ -251,18 +248,15 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         }
     }
 
-    function removeTokenFromCustomer(address customer, uint256 tokenId) internal returns(sToken memory) {
-        sToken memory tmpReturn;
-        sToken[] storage  tokens = customerTokens[customer];
+    function _removeTokenFromCustomer(address customer, uint256 tokenId) internal {
+        uint256[] storage  tokens = customerTokens[customer];
         for (uint256 i = 0; i < tokens.length; i++) {
-            if (tokens[i].token_ID == tokenId) {
-                tmpReturn = tokens[i]; 
+            if (tokens[i] == tokenId) {
                 tokens[i] = tokens[tokens.length - 1];
                 tokens.pop();
                 break;
             }
         }
-        return tmpReturn;
     }
     
     // ----------
@@ -292,17 +286,19 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
     }
 
     // Brand choose/update the recipient address
-    function setTransferCommissionRecipient(address newRecipient) external onlyRole(BRAND_ROLE_BURNER) {
-        address oldRecipient = transferCommissionRecipient;
-        transferCommissionRecipient = newRecipient;
-        emit ChangedCommissionRecipient(oldRecipient, newRecipient);
+    function tranferBrandAddressOwnership(address newAddress) external onlyRole(BRAND_ROLE_BURNER) {
+        // Only the brand address (commission recipient) can do this method
+        require(msg.sender == transferCommissionRecipient,  "Only the brand can tranfer the commission recipient and the ROLE ");
 
-        // TODO CHECK CON PIETRO --> Va al brand, non a NFTime la commissione.
-        // Bisogna cambiare anche chi è il ruolo del brand? NON CREDO perche altrimenti cabierebbe la ownership etc e non va bene
-        // Secondo me questa cosa, vista la commissione al brand e non a noi va solo cancellata ma vorrei ragionarci assieme
+        // Change recipient
+        transferCommissionRecipient = newAddress;
 
-        // grantRole(NFTIME_ROLE_PAUSER, newRecipient);
-        // renounceRole(NFTIME_ROLE_PAUSER, msg.sender); // x PIETRO --> SICURO CHE QUA NON SIA oldRecipient invece di msg.sender?    
+        // Manage role
+        grantRole(BRAND_ROLE_BURNER, newAddress);
+        renounceRole(NFTIME_ROLE_PAUSER, msg.sender);    
+
+        // Emit event 
+        emit ChangedCommissionRecipient(msg.sender, newAddress);
     }
 
     function getCommissionValue(uint256 tokenId) public view returns(int)
