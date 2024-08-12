@@ -84,7 +84,9 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         
         // Assigning admins
         _setRoleAdmin(CERTIFIER_ROLE_MINTER, BRAND_ROLE_BURNER);
-        _setRoleAdmin(NFTIME_ROLE_PAUSER, NFTIME_ROLE_PAUSER); // x PIETRO --> Perchè così? me lo spieghi?
+        _setRoleAdmin(NFTIME_ROLE_PAUSER, NFTIME_ROLE_PAUSER);
+
+        _setRoleAdmin(BRAND_ROLE_BURNER, BRAND_ROLE_BURNER);
 
         // Set tranferCommissionRecipient (BRAND)
         transferCommissionRecipient = initialOwner;
@@ -286,7 +288,7 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
     }
 
     // Brand choose/update the recipient address
-    function tranferBrandAddressOwnership(address newAddress) external onlyRole(BRAND_ROLE_BURNER) {
+    function tranferBrandAddressOwnership(address newAddress) external onlyRole(BRAND_ROLE_BURNER) returns(address) {
         // Only the brand address (commission recipient) can do this method
         require(msg.sender == transferCommissionRecipient,  "Only the brand can tranfer the commission recipient and the ROLE ");
 
@@ -295,10 +297,12 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
 
         // Manage role
         grantRole(BRAND_ROLE_BURNER, newAddress);
-        renounceRole(NFTIME_ROLE_PAUSER, msg.sender);    
+        renounceRole(BRAND_ROLE_BURNER, msg.sender);    
 
         // Emit event 
         emit ChangedCommissionRecipient(msg.sender, newAddress);
+        
+        return msg.sender;
     }
 
     function getCommissionValue(uint256 tokenId) public view returns(int)
@@ -308,21 +312,21 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         require(currentFiatPrice > 0, "Oracle output is Zero or a Negative Value");
 
         // Get WatchPrice
-        int256 tmpPrice = tokenPrices[tokenId];
+        int256 precisionMultiplier = 1e10;
+        int256 tmpPrice = tokenPrices[tokenId] * precisionMultiplier;
         int256 fee = (tmpPrice/1000) * commission;
         
         // Calculate the fee frice in MATIC [WEI]
         int256 fiatFeePrice = fee * 1e18;
-        int256 precisionMultiplier = 1e10;
-        int256 feeWeiAmount = (fiatFeePrice * precisionMultiplier * 1e8) / currentFiatPrice;
+        int256 feeWeiAmount = (fiatFeePrice * 1e8) / currentFiatPrice;
         feeWeiAmount = feeWeiAmount / precisionMultiplier;
 
         // return fee in WEI 
         return feeWeiAmount;
 
         // Converti il valore da Wei a MATIC
-        //int256 matic = weiAmount / 1e18; // Converti da Wei a MATIC dividendo per 1e18
-        //return matic; // Ritorna il valore in MATIC
+        // int256 matic = feeWeiAmount / 1e18; // Converti da Wei a MATIC dividendo per 1e18
+        // return matic; // Ritorna il valore in MATIC
     }
 
     // --------
@@ -364,3 +368,4 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         return super._update(to, tokenId, auth);
     }
 }
+
