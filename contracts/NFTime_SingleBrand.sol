@@ -7,29 +7,6 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Pausable.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 
-// TODO:
-// - OK Figura admin per bloccare tutto e farsi pagare da brand (PAUSER);
-// - OK Sostituire buy con transfer;
-// - OK Implementare uso corretto dei ruoli;
-
-// - Pagamento per minting tramite oracolo --> NO Perchè pagamento fatto off-chain (vedi excel SIMO)
-// + penso a logica di upgrade se necessaria;
-
-// OK Valutare inserimento burn tra le features (i.e. per certificatori "corrotti") -> memorizzazione dell'associazione <certificatori, NFT mintati>;
-    // - OK Salvataggio tokenID degli NFT (isn't this stored in ERC721?);
-    // - OK Burning di tutti gli NFT di un dato certificatore dopo una certa data;
-    // - OK NO DATA - Metodo che restituisca lista NFT con certificatore e data di certificazione;
-
-// - OK Metodo che ritorna la lista dei certificatori;
-
-// - Valutare quali altri eventi aggiungere per tenere traccia delle transazioni più importanti;
-
-// NEW TODO
-// OK --> da testare - Set Commission Recipient nel costruttore
-// con pietro --> Controllo metodo per aggiornare il commission recipient
-// OK --> da testare -  Salvo i prezzi in fase di MINTING per calcolare anche il tasso/commissione
-// OK --> da testare - Trasformo mapping ceritifiers in lista per tornare la lista
-// Controllo e verifico tutto --> creo un history/path logico da seguire simile real world 
 
 // Chainlink Oracle interface - Price Feed Contract Addresses
 // https://docs.chain.link/data-feeds/price-feeds/addresses?network=polygon&page=1#ov
@@ -96,6 +73,7 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
     // Certifiers
     // ----------
     
+    // Function to add a certifier --> Manage AccessControl Roles and contract's mapping status
     function addCertifier(address certifierAddress, string memory certifierName) external onlyRole(BRAND_ROLE_BURNER) {
         // Ensure the certifier doesn't already exist
         require(!_certifierExists(certifierAddress), "Certifier already added");
@@ -105,6 +83,7 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         emit CertifierAdded(certifierAddress, certifierName);
     }
 
+    // Function to remove a certifier --> Manage AccessControl Roles and contract's mapping status
     function removeCertifier(address certifierAddress) external onlyRole(BRAND_ROLE_BURNER) {
         // Find the index of the certifier in the array
         uint256 index = _findCertifierIndex(certifierAddress);
@@ -119,6 +98,7 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         certifiers.pop();
     }
 
+    // Returns the list of certifiers
     function getCertifiers() external view returns (Certifier[] memory) {
         return certifiers;
     }
@@ -147,13 +127,16 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
     // Token
     // -----
 
+    // Function to mint/generate a NFT
     function safeMint(address to, string memory token_URI, int256 watchPrice) external onlyRole(CERTIFIER_ROLE_MINTER) returns (uint256) 
-    {        
+    {     
+        // Token generation and assegnation   
         _tokenIds.increment();
         uint256 newItemId = _tokenIds.current();
         _safeMint(to, newItemId);
         _setTokenURI(newItemId, token_URI);
 
+        // Contract's mapping update
         tokenCertifiers[newItemId] = msg.sender;
         tokenPrices[newItemId] = watchPrice;
         certifierTokens[msg.sender].push(newItemId);
@@ -162,8 +145,10 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         return newItemId;
     }
 
+    // Function to transfer the ownership of a token --> pay commission to the brand (commission recipient)
     function transferToken(address from, address to, uint256 tokenId) external payable
     {
+        // Check requirements
         require(ownerOf(tokenId) == from, "Sender is not the owner of the token");
         require(msg.sender == from, "Only the owner can initiate the transfer");
 
@@ -173,9 +158,7 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         // Perform the transfer
         _transfer(from, to, tokenId);
 
-        // Pay brand commission
-        // Get price (from tokenURI?)
-        // TODO: Use here chainlink Oracle to calculate the WEI amount to pay
+        // Pay brand commission: Get watch price --> calculate commission --> convert in MATIC (Wei)
         uint commissionValue = uint(getCommissionValue(tokenId));  // Certification payment off-chain
         require(msg.value >= commissionValue, "Not enough commission sent"); // Certification payment off-chain
         payable(transferCommissionRecipient).transfer(commissionValue); // Certification payment off-chain
@@ -187,14 +170,17 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         emit Transfer(from, to, tokenId);
     }
 
+    // Returns the list of tokens of a given certifier (Who minted the tokens)
     function getCertifierTokens(address certifierAddress) external view returns (uint256[] memory) {
         return certifierTokens[certifierAddress];
     }
 
+    // Returns the list of tokens of a given customer (Who owns the tokens)
     function getCustomerTokens(address customerAddress) external view returns (uint256[] memory) {
         return customerTokens[customerAddress];
     }
 
+    // Private function to burn/delete a single token --> Manages also the contract's mapping status 
     function burnToken(uint256 tokenId) private {
         // Check
         require(_tokenExists(tokenId), "Token does not exist");
@@ -215,10 +201,12 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         delete tokenPrices[tokenId];
     }
 
+    // Funtion to delete/burn a token given the tokenID
     function burnSingleToken(uint256 tokenId) external onlyRole(BRAND_ROLE_BURNER) {
         burnToken(tokenId);        
     }
 
+    // Funtion to delete/burn all the tokens minted by a specific certifier
     function burnTokensByCertifier(address certifierAddress) external onlyRole(BRAND_ROLE_BURNER)
     {
         uint256[] memory tokens = certifierTokens[certifierAddress];
@@ -238,7 +226,7 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         }
     }
     
-    // Funzione di utilità per rimuovere un token dalla lista di un certificatore
+    // Utility function to remove a token from the certifierTokens list
     function _removeTokenFromCertifier(address certifier, uint256 tokenId) internal {
         uint256[] storage  tokens = certifierTokens[certifier];
         for (uint256 i = 0; i < tokens.length; i++) {
@@ -250,6 +238,7 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         }
     }
 
+    // Utility function to remove a token from the customerTokens list
     function _removeTokenFromCustomer(address customer, uint256 tokenId) internal {
         uint256[] storage  tokens = customerTokens[customer];
         for (uint256 i = 0; i < tokens.length; i++) {
@@ -265,29 +254,29 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
     // Commission
     // ----------
 
-    // updatePrice - CERTIFIERS
+    // Function to update the price of a token --> it is not in the token metadata because it might change  
     function setTokenPrice(uint256 tokenId, int256 price) external onlyRole(CERTIFIER_ROLE_MINTER) {
         require(_tokenExists(tokenId), "Token does not exist");
         tokenPrices[tokenId] = price;
     }
 
-    // getPrice
+    // Function to get the token price
     function getTokenPrice(uint256 tokenId) external view returns (int256) {
         require(_tokenExists(tokenId), "Token does not exist");
         return tokenPrices[tokenId];
     }
     
-    // updateCommision - BRAND
+    // Function to update the commision "percetage"
     function updateCommission(int newCommission) external onlyRole(BRAND_ROLE_BURNER){
         commission = newCommission;
     }
 
-    // getCommission
+    // Function to get the commission "percentage" value
     function getCommission() public view onlyRole(BRAND_ROLE_BURNER) returns(int){
         return commission;
     }
 
-    // Brand choose/update the recipient address
+    // Function to change/update the Brand role/commission recipient address
     function tranferBrandAddressOwnership(address newAddress) external onlyRole(BRAND_ROLE_BURNER) returns(address) {
         // Only the brand address (commission recipient) can do this method
         require(msg.sender == transferCommissionRecipient,  "Only the brand can tranfer the commission recipient and the ROLE ");
@@ -305,46 +294,46 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         return msg.sender;
     }
 
+    // Funtion to get the final commission value of a given token
     function getCommissionValue(uint256 tokenId) public view returns(int)
     {
         // Get MATIC current fiat price from chainlink oracle
         int currentFiatPrice = Oracle(oracleAddress).latestAnswer();
         require(currentFiatPrice > 0, "Oracle output is Zero or a Negative Value");
 
-        // Get WatchPrice
+        // Get WatchPrice and calculate the fee price
         int256 precisionMultiplier = 1e10;
         int256 tmpPrice = tokenPrices[tokenId] * precisionMultiplier;
         int256 fee = (tmpPrice/1000) * commission;
         
-        // Calculate the fee frice in MATIC [WEI]
+        // Convert units from USD/EUR to MATIC/Wei
         int256 fiatFeePrice = fee * 1e18;
         int256 feeWeiAmount = (fiatFeePrice * 1e8) / currentFiatPrice;
         feeWeiAmount = feeWeiAmount / precisionMultiplier;
 
-        // return fee in WEI 
         return feeWeiAmount;
-
-        // Converti il valore da Wei a MATIC
-        // int256 matic = feeWeiAmount / 1e18; // Converti da Wei a MATIC dividendo per 1e18
-        // return matic; // Ritorna il valore in MATIC
     }
 
     // --------
     // Contract
     // --------
 
-    function pause() external onlyRole(NFTIME_ROLE_PAUSER) {
+    // Function to pause the contract functionalities (mint)
+    function pause() external onlyRole(NFTIME_ROLE_PAUSER){
         _pause();
     }
 
+    // Function to unpause the contract functionalities (mint)
     function unpause() external onlyRole(NFTIME_ROLE_PAUSER) {
         _unpause();
     }
 
+    // Funtion to update the oracle address (in case it changes or different blockchain usage)
     function updateOracleAddress(address newContractAddress) external onlyRole(NFTIME_ROLE_PAUSER){
         oracleAddress = newContractAddress;
     }
 
+    // Function to get the oracle address
     function getOracleAddress() public view onlyRole(NFTIME_ROLE_PAUSER) returns(address){
         return oracleAddress;
     }
@@ -368,4 +357,3 @@ contract NFTime_SingleBrand is ERC721, ERC721Pausable, ERC721URIStorage, AccessC
         return super._update(to, tokenId, auth);
     }
 }
-
